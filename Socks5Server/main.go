@@ -2,10 +2,19 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 )
 
 func main() {
+	err := getConfig()
+	if err != nil {
+		return
+	}
+
+	log.SetPrefix("[ERROR]")
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	listen, err := net.Listen("tcp", "127.0.0.1:8888")
 	defer listen.Close()
 	if err != nil {

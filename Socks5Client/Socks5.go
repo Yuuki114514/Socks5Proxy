@@ -1,29 +1,45 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"os"
+	"strings"
+)
+
+var (
+	serverAddr string
 )
 
 func process(client net.Conn) {
 	err := authenticate(client)
 	if err != nil {
-		fmt.Println("auth error:", err)
+		//log.Println(err)
 		client.Close()
 		return
 	}
 
-	server, err := net.Dial("tcp", "127.0.0.1:8888")
+	//addr, err := getConfig()
 	if err != nil {
-		fmt.Println("connect to server error")
-		server.Close()
+		//log.Println(err)
+		return
+	}
+
+	server, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		log.Println(err)
+		//server.Close()
 		return
 	}
 
 	err = connect(client, server)
 	if err != nil {
-		fmt.Println("connect error:", err)
+		//log.Println(err)
+		server.Close()
 		client.Close()
 		return
 	}
@@ -39,6 +55,10 @@ func authenticate(client net.Conn) error {
 		return err
 	}
 
+	if buf[0] != 0x05 {
+		return errors.New("socks version wrong")
+	}
+
 	//无需认证
 	_, err = client.Write([]byte{0x05, 0x00})
 	if err != nil {
@@ -52,23 +72,32 @@ func connect(client net.Conn, server net.Conn) error {
 	buf := make([]byte, 256)
 	_, err := client.Read(buf)
 	if err != nil {
+		log.Println(err)
 		return err
+	}
+
+	if buf[0] != 0x05 {
+		return errors.New("socks5 version wrong")
+	}
+	if buf[1] != 0x01 {
+		return errors.New("command doesn't support")
 	}
 
 	_, err = server.Write(buf)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 
 	buf = make([]byte, 10)
 	_, err = server.Read(buf)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
+
 	_, err = client.Write(buf)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 
@@ -78,5 +107,33 @@ func connect(client net.Conn, server net.Conn) error {
 func forward(src, dest net.Conn) {
 	defer src.Close()
 	defer dest.Close()
-	io.Copy(dest, src)
+	_, err := io.Copy(dest, src)
+	if err != nil {
+		//log.Println(err)
+		return
+	}
+}
+
+func getConfig() error {
+	file, err := os.Open("Socks5.conf")
+	defer file.Close()
+	if err != nil {
+		return err
+	}
+
+	var addr, port string
+	reader := bufio.NewScanner(file)
+	for reader.Scan() {
+		text := reader.Text()
+		split := strings.Split(text, "=")
+		if split[0] == "addr" {
+			addr = split[1]
+		} else if split[0] == "port" {
+			port = split[1]
+		} else if split[0] == "key" {
+			key = []byte(split[1])
+		}
+	}
+	serverAddr = fmt.Sprintf("%s:%s", addr, port)
+	return nil
 }

@@ -1,15 +1,24 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net"
 )
 
 func main() {
-	server, err := net.Listen("tcp", ":9999")
+	err := getConfig()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	log.SetPrefix("[ERROR]")
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	server, err := net.Listen("tcp", "127.0.0.1:9999")
 	defer server.Close()
 	if err != nil {
-		fmt.Printf("Listen failed: %v\n", err)
+		log.Println("Listen() error: ", err)
 		server.Close()
 		return
 	}
@@ -17,7 +26,7 @@ func main() {
 	for {
 		client, err := server.Accept()
 		if err != nil {
-			fmt.Printf("Accept failed: %v", err)
+			log.Println("Accept() error: ", err)
 			continue
 		}
 		//fmt.Println("accepted")
