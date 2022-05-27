@@ -12,12 +12,13 @@ import (
 )
 
 func process(client net.Conn) {
-	var buf = make([]byte, 256)
-	_, err := client.Read(buf)
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	//var buf = make([]byte, 256)
+	//_, err := client.Read(buf)
+	//if err != nil {
+	//	log.Println(err)
+	//	return
+	//}
+	buf, err := decryptRead(client)
 
 	var addr string
 	var port uint16
@@ -52,7 +53,12 @@ func process(client net.Conn) {
 		return
 	}
 
-	_, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	//_, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	//if err != nil {
+	//	log.Println(err)
+	//	return
+	//}
+	err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	if err != nil {
 		log.Println(err)
 		return
@@ -72,7 +78,10 @@ func forward(dest, src net.Conn) {
 	}
 }
 
-func getConfig() error {
+func Init() error {
+	log.SetPrefix("[ERROR]")
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	file, err := os.Open("Socks5.conf")
 	if err != nil {
 		log.Println(err)

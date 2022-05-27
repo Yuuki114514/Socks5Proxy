@@ -6,14 +6,11 @@ import (
 )
 
 func main() {
-	err := getConfig()
+	err := Init()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-
-	log.SetPrefix("[ERROR]")
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	server, err := net.Listen("tcp", "127.0.0.1:9999")
 	defer server.Close()

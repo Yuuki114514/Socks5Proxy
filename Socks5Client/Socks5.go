@@ -18,27 +18,18 @@ var (
 func process(client net.Conn) {
 	err := authenticate(client)
 	if err != nil {
-		//log.Println(err)
 		client.Close()
-		return
-	}
-
-	//addr, err := getConfig()
-	if err != nil {
-		//log.Println(err)
 		return
 	}
 
 	server, err := net.Dial("tcp", serverAddr)
 	if err != nil {
 		log.Println(err)
-		//server.Close()
 		return
 	}
 
 	err = connect(client, server)
 	if err != nil {
-		//log.Println(err)
 		server.Close()
 		client.Close()
 		return
@@ -83,17 +74,36 @@ func connect(client net.Conn, server net.Conn) error {
 		return errors.New("command doesn't support")
 	}
 
-	_, err = server.Write(buf)
+	//_, err = server.Write(buf)
+	//if err != nil {
+	//	log.Println(err)
+	//	return err
+	//}
+	err = encryptWrite(server, buf)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 
-	buf = make([]byte, 10)
-	_, err = server.Read(buf)
+	//buf = make([]byte, 10)
+	//_, err = server.Read(buf)
+	//if err != nil {
+	//	log.Println(err)
+	//	return err
+	//}
+
+	read, err := decryptRead(server)
 	if err != nil {
 		log.Println(err)
+		return err
 	}
+
+	buf = read[:10]
+	fmt.Printf("%d ", len(buf))
+	for i := 0; i < 10; i++ {
+		fmt.Printf("%d ", buf[i])
+	}
+	fmt.Println()
 
 	_, err = client.Write(buf)
 	if err != nil {
@@ -114,7 +124,10 @@ func forward(src, dest net.Conn) {
 	}
 }
 
-func getConfig() error {
+func Init() error {
+	log.SetPrefix("[ERROR]")
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	file, err := os.Open("Socks5.conf")
 	defer file.Close()
 	if err != nil {
