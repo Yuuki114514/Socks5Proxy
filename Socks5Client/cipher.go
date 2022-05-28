@@ -70,23 +70,23 @@ func AESDecrypt(cipherText []byte) []byte {
 	return plainText
 }
 
-func encryptWrite(conn net.Conn, buf []byte) error {
+func encryptWrite(conn net.Conn, buf []byte) (int, error) {
 	encrypt := AESEncrypt(buf)
-	_, err := conn.Write(encrypt)
+	n, err := conn.Write(encrypt)
 	if err != nil {
 		log.Println(err)
-		return err
+		return 0, err
 	}
-	return nil
+	return n, nil
 }
 
-func decryptRead(conn net.Conn) ([]byte, error) {
+func decryptRead(conn net.Conn) ([]byte, int, error) {
 	buf := make([]byte, 2048)
-	_, err := conn.Read(buf)
+	n, err := conn.Read(buf)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return nil, 0, err
 	}
 	decrypt := AESDecrypt(buf)
-	return decrypt, nil
+	return decrypt, n, nil
 }

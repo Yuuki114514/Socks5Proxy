@@ -37,17 +37,40 @@ func process(client net.Conn) {
 
 	go forward(client, server)
 	forward(server, client)
+	//go func() {
+	//	err := encryptForward(client, server)
+	//	if err != nil {
+	//		return
+	//	}
+	//}()
+	//err = decryptForward(server, client)
+	//if err != nil {
+	//	return
+	//}
 }
 
 func authenticate(client net.Conn) error {
 	buf := make([]byte, 256)
-	_, err := client.Read(buf)
+	_, err := io.ReadFull(client, buf[:2])
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 
+	//_, err := client.Read(buf)
+	//if err != nil {
+	//	return err
+	//}
+
 	if buf[0] != 0x05 {
 		return errors.New("socks version wrong")
+	}
+
+	methods := buf[1]
+	_, err = io.ReadFull(client, buf[:methods])
+	if err != nil {
+		log.Println(err)
+		return err
 	}
 
 	//无需认证
@@ -61,11 +84,12 @@ func authenticate(client net.Conn) error {
 
 func connect(client net.Conn, server net.Conn) error {
 	buf := make([]byte, 256)
-	_, err := client.Read(buf)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
+	//n, err := client.Read(buf)
+	//if err != nil {
+	//	log.Println(err)
+	//	return err
+	//}
+	_, err := io.ReadFull(client, buf[:4])
 
 	if buf[0] != 0x05 {
 		return errors.New("socks5 version wrong")
@@ -74,36 +98,68 @@ func connect(client net.Conn, server net.Conn) error {
 		return errors.New("command doesn't support")
 	}
 
-	//_, err = server.Write(buf)
-	//if err != nil {
-	//	log.Println(err)
-	//	return err
-	//}
-	err = encryptWrite(server, buf)
+	addrType := buf[3]
+	switch addrType {
+	case 0x01:
+		_, err := io.ReadFull(client, buf[4:4+net.IPv4len+2])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		_, err = encryptWrite(server, buf[:4+net.IPv4len+2])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+	case 0x03:
+		_, err := io.ReadFull(client, buf[4:5])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		length := buf[4]
+		_, err = io.ReadFull(client, buf[5:5+length+2])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		_, err = encryptWrite(server, buf[:5+length+2])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+	case 0x04:
+		_, err := io.ReadFull(client, buf[4:4+net.IPv6len])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		_, err = encryptWrite(server, buf[:4+net.IPv6len+2])
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+	}
+
+	//_, err = encryptWrite(server, buf[:n])
+	read, _, err := decryptRead(server)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 
-	//buf = make([]byte, 10)
-	//_, err = server.Read(buf)
+	//buf := make([]byte, 10)
+	//n, err = io.ReadFull(server, buf)
 	//if err != nil {
 	//	log.Println(err)
 	//	return err
 	//}
 
-	read, err := decryptRead(server)
-	if err != nil {
-		log.Println(err)
-		return err
-	}
-
+	//fmt.Println("length: ", n) //
 	buf = read[:10]
-	fmt.Printf("%d ", len(buf))
 	for i := 0; i < 10; i++ {
 		fmt.Printf("%d ", buf[i])
 	}
-	fmt.Println()
 
 	_, err = client.Write(buf)
 	if err != nil {
@@ -114,13 +170,95 @@ func connect(client net.Conn, server net.Conn) error {
 	return nil
 }
 
-func forward(src, dest net.Conn) {
-	defer src.Close()
-	defer dest.Close()
-	_, err := io.Copy(dest, src)
+func forward(server, client net.Conn) {
+	defer server.Close()
+	defer client.Close()
+	_, err := io.Copy(client, server)
 	if err != nil {
 		//log.Println(err)
 		return
+	}
+}
+
+// 从dst读取数据加密传给src
+func encryptForward(dst, src net.Conn) error {
+	//fmt.Println("encryptForward")
+	for {
+		buf := make([]byte, 2048)
+		read, err := dst.Read(buf)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+
+		//lenBuf := make([]byte, 2)
+		//binary.BigEndian.PutUint16(lenBuf, uint16(read))
+		//for i := 0; i < 2; i++ {
+		//	fmt.Printf("%d %d\n", lenBuf[0], lenBuf[1])
+		//}
+		//_, _ = encryptWrite(src, lenBuf)
+		//n, err := src.Write(lenBuf)
+		//if err != nil {
+		//	log.Println(err)
+		//	return err
+		//}
+		//if n != 2 {
+		//	log.Println("length send wrong")
+		//}
+
+		fmt.Println("encrypt read: ", read)
+		if read > 0 {
+			//write, err := encryptWrite(src, buf[0:read])
+			write, err := src.Write(buf[:read])
+			fmt.Println("encrypt write: ", write)
+			if err != nil {
+				log.Println(err)
+				return err
+			} else if read != write {
+				return io.ErrShortWrite
+			}
+		}
+	}
+}
+
+// 从dst读取数据解密传给src
+func decryptForward(dst, src net.Conn) error {
+	//fmt.Println("decryptForward")
+	for {
+		//lenBuf := make([]byte, 2)
+		//n, err := dst.Read(lenBuf)
+		//if err != nil {
+		//	log.Println(err)
+		//	return err
+		//}
+		//if n != 2 {
+		//	log.Println("length get wrong")
+		//	return nil
+		//}
+		//length := binary.BigEndian.Uint16(lenBuf)
+		//fmt.Println("decrypt length: ", length)
+
+		//buf, read, err := decryptRead(dst)
+		buf := make([]byte, 2048)
+		read, err := dst.Read(buf)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		fmt.Println("decrypt read: ", read)
+
+		//buf2 := buf[:length]
+		if read > 0 {
+			write, err := src.Write(buf[0:read])
+			//write, err := src.Write(buf2)
+			fmt.Println("decrypt write: ", write)
+			if err != nil {
+				log.Println(err)
+				return err
+			} else if read != write {
+				return io.ErrShortWrite
+			}
+		}
 	}
 }
 

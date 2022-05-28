@@ -18,7 +18,7 @@ func process(client net.Conn) {
 	//	log.Println(err)
 	//	return
 	//}
-	buf, err := decryptRead(client)
+	buf, _, err := decryptRead(client)
 
 	var addr string
 	var port uint16
@@ -58,7 +58,8 @@ func process(client net.Conn) {
 	//	log.Println(err)
 	//	return
 	//}
-	err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+
+	_, err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	if err != nil {
 		log.Println(err)
 		return
@@ -66,6 +67,16 @@ func process(client net.Conn) {
 
 	go forward(client, src)
 	forward(src, client)
+	//go func() {
+	//	err := decryptForward(client, src)
+	//	if err != nil {
+	//		return
+	//	}
+	//}()
+	//err = encryptForward(src, client)
+	//if err != nil {
+	//	return
+	//}
 }
 
 func forward(dest, src net.Conn) {
@@ -75,6 +86,91 @@ func forward(dest, src net.Conn) {
 	if err != nil {
 		//log.Println(err)
 		return
+	}
+}
+
+// 从dst读取数据加密传给src
+func encryptForward(dst, src net.Conn) error {
+	//fmt.Println("encryptForward")
+	for {
+		buf := make([]byte, 2048)
+		read, err := dst.Read(buf)
+		if err != nil {
+			//if err == io.EOF {
+			//	return err
+			//}
+			log.Println(err)
+			return err
+		}
+
+		//lenBuf := make([]byte, 2)
+		//binary.BigEndian.PutUint16(lenBuf, uint16(read))
+		//n, err := src.Write(lenBuf)
+		//if err != nil {
+		//	log.Println(err)
+		//	return err
+		//}
+		//if n != 2 {
+		//	log.Println("length send wrong")
+		//}
+
+		fmt.Println("encrypt read: ", read)
+		if read > 0 {
+			//write, err := encryptWrite(src, buf[:read])
+			write, err := src.Write(buf[:read])
+			fmt.Println("encrypt write: ", write)
+			if err != nil {
+				log.Println(err)
+				return err
+			} else if read != write {
+				return io.ErrShortWrite
+			}
+		}
+	}
+}
+
+// 从dst读取数据解密传给src
+func decryptForward(dst, src net.Conn) error {
+	//fmt.Println("decryptForward")
+	for {
+		buf := make([]byte, 2048)
+		read, err := dst.Read(buf)
+		//buf, read, err := decryptRead(dst)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+
+		//bytes, _, _ := decryptRead(dst)
+		//lenBuf := bytes[:2]
+		//
+		////n, err := dst.Read(lenBuf)
+		////if err != nil {
+		////	log.Println(err)
+		////	return err
+		////}
+		////if n != 2 {
+		////	log.Println("length get wrong")
+		////	return nil
+		////}
+		//for i := 0; i < 2; i++ {
+		//	fmt.Printf("%d %d\n", lenBuf[0], lenBuf[1])
+		//}
+		//length := binary.BigEndian.Uint16(lenBuf)
+		//buf2 := buf[:length]
+
+		fmt.Println("decrypt read: ", read)
+		if read > 0 {
+			//write, err := src.Write(buf2)
+			write, err := src.Write(buf[:517]) ///////////////
+			fmt.Println("decrypt write: ", write)
+			if err != nil {
+				log.Println(err)
+				return err
+			} else if read != write {
+				return io.ErrShortWrite
+			}
+		}
 	}
 }
 
