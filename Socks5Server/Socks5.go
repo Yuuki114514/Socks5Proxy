@@ -65,18 +65,18 @@ func process(client net.Conn) {
 		return
 	}
 
-	go forward(client, src)
-	forward(src, client)
-	//go func() {
-	//	err := decryptForward(client, src)
-	//	if err != nil {
-	//		return
-	//	}
-	//}()
-	//err = encryptForward(src, client)
-	//if err != nil {
-	//	return
-	//}
+	//go forward(client, src)
+	//forward(src, client)
+	go func() {
+		err := decryptForward(client, src)
+		if err != nil {
+			return
+		}
+	}()
+	err = encryptForward(src, client)
+	if err != nil {
+		return
+	}
 }
 
 func forward(dest, src net.Conn) {
@@ -103,22 +103,13 @@ func encryptForward(dst, src net.Conn) error {
 			return err
 		}
 
-		//lenBuf := make([]byte, 2)
-		//binary.BigEndian.PutUint16(lenBuf, uint16(read))
-		//n, err := src.Write(lenBuf)
-		//if err != nil {
-		//	log.Println(err)
-		//	return err
-		//}
-		//if n != 2 {
-		//	log.Println("length send wrong")
-		//}
-
-		fmt.Println("encrypt read: ", read)
+		fmt.Println("3: 加密前/读取: ", read)
 		if read > 0 {
 			//write, err := encryptWrite(src, buf[:read])
 			write, err := src.Write(buf[:read])
-			fmt.Println("encrypt write: ", write)
+			//encrypt, err := AesEncrypt(buf[:read], key)
+			//write, err := src.Write(encrypt)
+			fmt.Println("3: 加密后/发送: ", write)
 			if err != nil {
 				log.Println(err)
 				return err
@@ -133,9 +124,10 @@ func encryptForward(dst, src net.Conn) error {
 func decryptForward(dst, src net.Conn) error {
 	//fmt.Println("decryptForward")
 	for {
-		buf := make([]byte, 2048)
+		buf := make([]byte, 3072)
 		read, err := dst.Read(buf)
 		//buf, read, err := decryptRead(dst)
+		//decrypt, err := AesDecrypt(buf[:read], key)
 		if err != nil {
 			log.Println(err)
 			return err
@@ -159,11 +151,12 @@ func decryptForward(dst, src net.Conn) error {
 		//length := binary.BigEndian.Uint16(lenBuf)
 		//buf2 := buf[:length]
 
-		fmt.Println("decrypt read: ", read)
+		fmt.Println("2: 解密前/读取: ", read)
 		if read > 0 {
 			//write, err := src.Write(buf2)
-			write, err := src.Write(buf[:517]) ///////////////
-			fmt.Println("decrypt write: ", write)
+			write, err := src.Write(buf[:read]) ///////////////
+			//write, err := src.Write(decrypt)
+			fmt.Println("2: 解密后//发送: ", write)
 			if err != nil {
 				log.Println(err)
 				return err
