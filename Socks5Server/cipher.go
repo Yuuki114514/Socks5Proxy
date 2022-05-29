@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 var (
@@ -63,6 +64,7 @@ func encryptWrite(conn net.Conn, plainText []byte) (int, error) {
 	}
 	encryptedText, err := encrypt(plainText)
 	if err != nil {
+		log.Println(err)
 		return 0, err
 	}
 	write, err := conn.Write(encryptedText)
@@ -76,15 +78,18 @@ func encryptWrite(conn net.Conn, plainText []byte) (int, error) {
 func decryptRead(conn net.Conn, encryptedText []byte) ([]byte, int, error) {
 	_, err := conn.Read(encryptedText[:1])
 	if err != nil {
+		log.Println(err)
 		return nil, 0, err
 	}
 	padding := int(encryptedText[0])
 	read, err := conn.Read(encryptedText)
 	if err != nil {
+		log.Println(err)
 		return nil, 0, err
 	}
-	plainText, err := decrypt(encryptedText[0:read], padding)
+	plainText, err := decrypt(encryptedText[:read], padding)
 	if err != nil {
+		log.Println(err)
 		return nil, 0, err
 	}
 	return plainText, len(plainText), nil
@@ -94,18 +99,20 @@ func decryptRead(conn net.Conn, encryptedText []byte) ([]byte, int, error) {
 func encryptForward(src, dst net.Conn) error {
 	buffer := make([]byte, BlockSize)
 	for {
+		err := src.SetReadDeadline(time.Now().Add(3 * time.Second))
 		read, err := src.Read(buffer)
 		if err != nil {
-			if err != io.EOF {
-				return err
-			} else {
+			if err == io.EOF {
 				return nil
+			} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return netErr
+			} else {
+				return err
 			}
 		}
 		if read > 0 {
 			_, err := encryptWrite(dst, buffer[:read])
 			if err != nil {
-				log.Println(err)
 				return err
 			}
 		}
@@ -127,6 +134,7 @@ func decryptForward(src, dst net.Conn) error {
 		if read > 0 {
 			_, err := dst.Write(plainText)
 			if err != nil {
+				log.Println(err)
 				return err
 			}
 		}

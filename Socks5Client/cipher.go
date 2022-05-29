@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 const (
@@ -14,7 +15,7 @@ const (
 )
 
 var (
-	iv  []byte //加密初始向量
+	iv  []byte
 	key []byte
 )
 
@@ -94,12 +95,19 @@ func decryptRead(conn net.Conn, encryptedText []byte) ([]byte, int, error) {
 func encryptForward(src, dst net.Conn) error {
 	buffer := make([]byte, BlockSize)
 	for {
+		err := src.SetReadDeadline(time.Now().Add(3 * time.Second))
+		if err != nil {
+			log.Println(err)
+			return err
+		}
 		read, err := src.Read(buffer)
 		if err != nil {
-			if err != io.EOF {
-				return err
-			} else {
+			if err == io.EOF {
 				return nil
+			} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return netErr
+			} else {
+				return err
 			}
 		}
 		if read > 0 {

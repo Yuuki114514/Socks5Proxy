@@ -37,12 +37,16 @@ func process(client net.Conn) {
 	go func() {
 		err := encryptForward(client, server)
 		if err != nil {
+			client.Close()
+			server.Close()
 			return
 		}
 	}()
 	go func() {
 		err := decryptForward(server, client)
 		if err != nil {
+			server.Close()
+			client.Close()
 			return
 		}
 	}()

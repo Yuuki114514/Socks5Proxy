@@ -13,6 +13,10 @@ import (
 func process(client net.Conn) {
 	b := make([]byte, BlockSize)
 	buf, _, err := decryptRead(client, b)
+	if err != nil {
+		client.Close()
+		return
+	}
 
 	var addr string
 	var port uint16
@@ -50,18 +54,24 @@ func process(client net.Conn) {
 	_, err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	if err != nil {
 		log.Println(err)
+		client.Close()
+		dst.Close()
 		return
 	}
 
 	go func() {
 		err := decryptForward(client, dst)
 		if err != nil {
+			client.Close()
+			dst.Close()
 			return
 		}
 	}()
 	go func() {
 		err := encryptForward(dst, client)
 		if err != nil {
+			dst.Close()
+			client.Close()
 			return
 		}
 	}()
