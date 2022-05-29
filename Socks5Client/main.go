@@ -13,12 +13,11 @@ func main() {
 	}
 
 	server, err := net.Listen("tcp", "127.0.0.1:9999")
-	defer server.Close()
 	if err != nil {
 		log.Println("Listen() error: ", err)
-		server.Close()
 		return
 	}
+	defer server.Close()
 
 	for {
 		client, err := server.Accept()
@@ -26,7 +25,6 @@ func main() {
 			log.Println("Accept() error: ", err)
 			continue
 		}
-		//fmt.Println("accepted")
 		go process(client)
 	}
 }

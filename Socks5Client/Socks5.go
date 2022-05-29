@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -35,27 +34,14 @@ func process(client net.Conn) {
 		return
 	}
 
-	//go forward(client, server)
-	//forward(server, client)
-	//go func() {
-	//	err := encryptForward(client, server)
-	//	if err != nil {
-	//		return
-	//	}
-	//}()
-	//err = decryptForward(server, client)
-	//if err != nil {
-	//	return
-	//}
-
 	go func() {
-		err := EncodeCopy(client, server)
+		err := encryptForward(client, server)
 		if err != nil {
 			return
 		}
 	}()
 	go func() {
-		err := DecodeCopy(server, client)
+		err := decryptForward(server, client)
 		if err != nil {
 			return
 		}
@@ -64,21 +50,13 @@ func process(client net.Conn) {
 
 func authenticate(client net.Conn) error {
 	buf := make([]byte, 256)
-	_, err := io.ReadFull(client, buf[:2])
+	_, err := client.Read(buf)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-
 	if buf[0] != 0x05 {
 		return errors.New("socks version wrong")
-	}
-
-	methods := buf[1]
-	_, err = io.ReadFull(client, buf[:methods])
-	if err != nil {
-		log.Println(err)
-		return err
 	}
 
 	//无需认证
@@ -91,9 +69,17 @@ func authenticate(client net.Conn) error {
 }
 
 func connect(client net.Conn, server net.Conn) error {
-	buf := make([]byte, 256)
-	_, err := io.ReadFull(client, buf[:4])
-
+	buf := make([]byte, BlockSize)
+	read, err := client.Read(buf)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	_, err = encryptWrite(server, buf[:read])
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 	if buf[0] != 0x05 {
 		return errors.New("socks5 version wrong")
 	}
@@ -101,136 +87,20 @@ func connect(client net.Conn, server net.Conn) error {
 		return errors.New("command doesn't support")
 	}
 
-	addrType := buf[3]
-	switch addrType {
-	case 0x01:
-		_, err := io.ReadFull(client, buf[4:4+net.IPv4len+2])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		_, err = encryptWrite2(server, buf[:4+net.IPv4len+2])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-	case 0x03:
-		_, err := io.ReadFull(client, buf[4:5])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		length := buf[4]
-		_, err = io.ReadFull(client, buf[5:5+length+2])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		_, err = encryptWrite2(server, buf[:5+length+2])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-	case 0x04:
-		_, err := io.ReadFull(client, buf[4:4+net.IPv6len])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		_, err = encryptWrite2(server, buf[:4+net.IPv6len+2])
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-	}
-
-	//_, err = encryptWrite(server, buf[:n])
-	//b := make([]byte, 10)
-	read, _, err := decryptRead2(server)
+	b := make([]byte, BlockSize)
+	bytes, _, err := decryptRead(server, b)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	buf = read[:10]
 
-	_, err = client.Write(buf)
+	_, err = client.Write(bytes)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 
 	return nil
-}
-
-func forward(server, client net.Conn) {
-	defer server.Close()
-	defer client.Close()
-	_, err := io.Copy(client, server)
-	if err != nil {
-		//log.Println(err)
-		return
-	}
-}
-
-// 从src读取数据加密传给dst
-func encryptForward(src, dst net.Conn) error {
-	//fmt.Println("encryptForward")
-	for {
-		buf := make([]byte, BlockSize)
-		read, err := src.Read(buf)
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-
-		fmt.Println("1: 加密前/读取: ", read)
-		if read > 0 {
-			write, err := encryptWrite2(dst, buf[:read])
-			if err != nil {
-				log.Println(err)
-				return err
-			}
-
-			fmt.Println("1: 加密后/发送: ", write)
-			if err != nil {
-				log.Println(err)
-				return err
-			} else if read != write {
-				return io.ErrShortWrite
-			}
-		}
-	}
-}
-
-// 从dst读取数据解密传给src
-func decryptForward(src, dst net.Conn) error {
-	for {
-		//buf, read, err := decryptRead(dst)
-		buf := make([]byte, BlockSize)
-		//buf := make([]byte, 3072)
-		read, err := src.Read(buf)
-
-		//decrypt, err := AesDecrypt(buf[:read], key)
-
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		fmt.Println("4: 解密前: ", read)
-
-		if read > 0 {
-			write, err := dst.Write(buf[0:read])
-			//write, err := src.Write(decrypt)
-
-			fmt.Println("4: 解密后: ", write)
-			if err != nil {
-				log.Println(err)
-				return err
-			} else if read != write {
-				return io.ErrShortWrite
-			}
-		}
-	}
 }
 
 func Init() error {
@@ -244,9 +114,9 @@ func Init() error {
 	}
 
 	var addr, port string
-	reader := bufio.NewScanner(file)
-	for reader.Scan() {
-		text := reader.Text()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		text := scanner.Text()
 		split := strings.Split(text, "=")
 		if split[0] == "addr" {
 			addr = split[1]

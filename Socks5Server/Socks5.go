@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -12,13 +11,8 @@ import (
 )
 
 func process(client net.Conn) {
-	//var buf = make([]byte, 256)
-	//_, err := client.Read(buf)
-	//if err != nil {
-	//	log.Println(err)
-	//	return
-	//}
-	buf, _, err := decryptRead(client)
+	b := make([]byte, BlockSize)
+	buf, _, err := decryptRead(client, b)
 
 	var addr string
 	var port uint16
@@ -49,9 +43,9 @@ func process(client net.Conn) {
 	dst, err := net.DialTCP("tcp", nil, &dstAddr)
 	if err != nil {
 		log.Println(err)
-		//src.Close()
 		return
 	}
+	//defer dst.Close()
 
 	_, err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	if err != nil {
@@ -59,104 +53,18 @@ func process(client net.Conn) {
 		return
 	}
 
-	//go forward(client, src)
-	//forward(src, client)
-	//go func() {
-	//	err := decryptForward(client, src)
-	//	if err != nil {
-	//		return
-	//	}
-	//}()
-	//err = encryptForward(src, client)
-	//if err != nil {
-	//	return
-	//}
 	go func() {
-		err := EncodeCopy(dst, client)
+		err := decryptForward(client, dst)
 		if err != nil {
 			return
 		}
 	}()
 	go func() {
-		err := DecodeCopy(client, dst)
+		err := encryptForward(dst, client)
 		if err != nil {
 			return
 		}
 	}()
-}
-
-func forward(dest, src net.Conn) {
-	defer src.Close()
-	defer dest.Close()
-	_, err := io.Copy(dest, src)
-	if err != nil {
-		//log.Println(err)
-		return
-	}
-}
-
-// 从dst读取数据加密传给src
-func encryptForward(dst, src net.Conn) error {
-	//fmt.Println("encryptForward")
-	for {
-		buf := make([]byte, 2048)
-		read, err := dst.Read(buf)
-
-		if err != nil {
-			//if err == io.EOF {
-			//	return err
-			//}
-			log.Println(err)
-			return err
-		}
-
-		fmt.Println("3: 加密前/读取: ", read)
-		if read > 0 {
-			//write, err := encryptWrite(src, buf[:read])
-			write, err := src.Write(buf[:read])
-			//encrypt, err := AesEncrypt(buf[:read], key)
-			//write, err := src.Write(encrypt)
-
-			fmt.Println("3: 加密后/发送: ", write)
-			if err != nil {
-				log.Println(err)
-				return err
-			} else if read != write {
-				return io.ErrShortWrite
-			}
-		}
-	}
-}
-
-// 从dst读取数据解密传给src
-func decryptForward(dst, src net.Conn) error {
-	//fmt.Println("decryptForward")
-	for {
-		//buf := make([]byte, 3072)
-		buf := make([]byte, 2048)
-		read, err := dst.Read(buf)
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		//buf, read, err := decryptRead(dst)
-		//decrypt, err := AesDecrypt(buf[:read], key)
-
-		fmt.Println("2: 解密前/读取: ", read)
-		if read > 0 {
-			//write, err := src.Write(buf2)
-			write, err := src.Write(buf[:read])
-			//write, err := src.Write(decrypt)
-
-			fmt.Println("2: 解密后//发送: ", write)
-			if err != nil {
-				log.Println(err)
-				return err
-			} else if read != write {
-				return io.ErrShortWrite
-			}
-		}
-	}
 }
 
 func Init() error {
@@ -168,6 +76,7 @@ func Init() error {
 		log.Println(err)
 		return err
 	}
+	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

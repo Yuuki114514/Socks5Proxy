@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net"
 )
 
@@ -12,10 +12,8 @@ func main() {
 	}
 
 	listen, err := net.Listen("tcp", "127.0.0.1:8888")
-
 	if err != nil {
-		fmt.Println(err)
-		listen.Close()
+		log.Println(err)
 		return
 	}
 	defer listen.Close()
@@ -23,8 +21,7 @@ func main() {
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			conn.Close()
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 		go process(conn)

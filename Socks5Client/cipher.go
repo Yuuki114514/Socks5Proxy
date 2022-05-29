@@ -4,87 +4,132 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"io"
 	"log"
 	"net"
 )
 
-// Padding 对明文进行填充
-func Padding(plainText []byte, blockSize int) []byte {
-	//计算要填充的长度
-	n := blockSize - len(plainText)%blockSize
-	//对原来的明文填充n个n
-	temp := bytes.Repeat([]byte{byte(n)}, n)
-	plainText = append(plainText, temp...)
-	return plainText
-}
+const (
+	BlockSize = 128
+)
 
-// UnPadding 对密文删除填充
-func UnPadding(cipherText []byte) []byte {
-	//取出密文最后一个字节end
-	end := cipherText[len(cipherText)-1]
-	//删除填充
-	cipherText = cipherText[:len(cipherText)-int(end)]
-	return cipherText
-}
+var (
+	iv  []byte //加密初始向量
+	key []byte
+)
 
-// AESEncrypt AEC加密（CBC模式）
-func AESEncrypt(plainText []byte) []byte {
-	//指定加密算法，返回一个AES算法的Block接口对象
+func encrypt(plainText []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return nil, err
 	}
-	//进行填充
-	plainText = Padding(plainText, block.BlockSize())
-	//指定初始向量vi,长度和block的块尺寸一致
-	iv := []byte("12345678abcdefgh")
-	//指定分组模式，返回一个BlockMode接口对象
+	text := pad(plainText, BlockSize)
 	blockMode := cipher.NewCBCEncrypter(block, iv)
-	//加密连续数据库
-	cipherText := make([]byte, len(plainText))
-	blockMode.CryptBlocks(cipherText, plainText)
-	//返回密文
-	return cipherText
+	encryptedText := make([]byte, len(text))
+	blockMode.CryptBlocks(encryptedText, text)
+	return encryptedText, nil
 }
 
-// AESDecrypt AEC解密（CBC模式）
-func AESDecrypt(cipherText []byte) []byte {
-	//指定解密算法，返回一个AES算法的Block接口对象
+func pad(plainText []byte, blockSize int) []byte {
+	padding := blockSize - len(plainText)
+	repeat := bytes.Repeat([]byte{0x0}, padding)
+	return append(plainText, repeat...)
+}
+
+func decrypt(encryptedText []byte, padding int) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return nil, err
 	}
-	//指定初始化向量IV,和加密的一致
-	iv := []byte("12345678abcdefgh")
-	//指定分组模式，返回一个BlockMode接口对象
 	blockMode := cipher.NewCBCDecrypter(block, iv)
-	//解密
-	plainText := make([]byte, len(cipherText))
-	blockMode.CryptBlocks(plainText, cipherText)
-	//删除填充
-	plainText = UnPadding(plainText)
-	return plainText
+	plainText := make([]byte, len(encryptedText))
+	blockMode.CryptBlocks(plainText, encryptedText)
+	text := unPad(plainText, padding)
+	return text, nil
 }
 
-func encryptWrite2(conn net.Conn, buf []byte) (int, error) {
-	encrypt := AESEncrypt(buf)
-	//fmt.Println("after encrypt: ", len(encrypt))
-	n, err := conn.Write(encrypt)
+func unPad(ciphertext []byte, padding int) []byte {
+	return ciphertext[:BlockSize-padding]
+}
+
+func encryptWrite(conn net.Conn, plainText []byte) (int, error) {
+	padding := BlockSize - len(plainText)
+	_, err := conn.Write([]byte{byte(padding)})
 	if err != nil {
 		log.Println(err)
 		return 0, err
 	}
-	return n, nil
-}
-
-func decryptRead2(conn net.Conn) ([]byte, int, error) {
-	buf := make([]byte, 2048)
-	n, err := conn.Read(buf)
+	encryptedText, err := encrypt(plainText)
+	if err != nil {
+		return 0, err
+	}
+	write, err := conn.Write(encryptedText)
 	if err != nil {
 		log.Println(err)
+		return 0, err
+	}
+	return write, nil
+}
+
+func decryptRead(conn net.Conn, encryptedText []byte) ([]byte, int, error) {
+	_, err := conn.Read(encryptedText[:1])
+	if err != nil {
 		return nil, 0, err
 	}
-	//fmt.Println("decryptRead: ", n)
-	decrypt := AESDecrypt(buf)
-	return decrypt, n, nil
+	padding := int(encryptedText[0])
+	read, err := conn.Read(encryptedText)
+	if err != nil {
+		return nil, 0, err
+	}
+	plainText, err := decrypt(encryptedText[:read], padding)
+	if err != nil {
+		return nil, 0, err
+	}
+	return plainText, len(plainText), nil
+}
+
+//从src读取数据加密后传给dst
+func encryptForward(src, dst net.Conn) error {
+	buffer := make([]byte, BlockSize)
+	for {
+		read, err := src.Read(buffer)
+		if err != nil {
+			if err != io.EOF {
+				return err
+			} else {
+				return nil
+			}
+		}
+		if read > 0 {
+			_, err := encryptWrite(dst, buffer[:read])
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+		}
+	}
+}
+
+//从src读取数据解密后传给dst
+func decryptForward(src, dst net.Conn) error {
+	buffer := make([]byte, BlockSize)
+	for {
+		plainText, read, err := decryptRead(src, buffer)
+		if err != nil {
+			if err != io.EOF {
+				return err
+			} else {
+				return nil
+			}
+		}
+		if read > 0 {
+			_, err := dst.Write(plainText)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+		}
+	}
 }
