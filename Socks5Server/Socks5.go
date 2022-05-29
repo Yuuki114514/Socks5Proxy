@@ -46,18 +46,12 @@ func process(client net.Conn) {
 	}
 
 	dstAddr := net.TCPAddr{IP: ip, Port: int(port)}
-	src, err := net.DialTCP("tcp", nil, &dstAddr)
+	dst, err := net.DialTCP("tcp", nil, &dstAddr)
 	if err != nil {
 		log.Println(err)
 		//src.Close()
 		return
 	}
-
-	//_, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	//if err != nil {
-	//	log.Println(err)
-	//	return
-	//}
 
 	_, err = encryptWrite(client, []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	if err != nil {
@@ -67,16 +61,28 @@ func process(client net.Conn) {
 
 	//go forward(client, src)
 	//forward(src, client)
+	//go func() {
+	//	err := decryptForward(client, src)
+	//	if err != nil {
+	//		return
+	//	}
+	//}()
+	//err = encryptForward(src, client)
+	//if err != nil {
+	//	return
+	//}
 	go func() {
-		err := decryptForward(client, src)
+		err := EncodeCopy(dst, client)
 		if err != nil {
 			return
 		}
 	}()
-	err = encryptForward(src, client)
-	if err != nil {
-		return
-	}
+	go func() {
+		err := DecodeCopy(client, dst)
+		if err != nil {
+			return
+		}
+	}()
 }
 
 func forward(dest, src net.Conn) {
@@ -95,6 +101,7 @@ func encryptForward(dst, src net.Conn) error {
 	for {
 		buf := make([]byte, 2048)
 		read, err := dst.Read(buf)
+
 		if err != nil {
 			//if err == io.EOF {
 			//	return err
@@ -109,6 +116,7 @@ func encryptForward(dst, src net.Conn) error {
 			write, err := src.Write(buf[:read])
 			//encrypt, err := AesEncrypt(buf[:read], key)
 			//write, err := src.Write(encrypt)
+
 			fmt.Println("3: 加密后/发送: ", write)
 			if err != nil {
 				log.Println(err)
@@ -124,38 +132,22 @@ func encryptForward(dst, src net.Conn) error {
 func decryptForward(dst, src net.Conn) error {
 	//fmt.Println("decryptForward")
 	for {
-		buf := make([]byte, 3072)
+		//buf := make([]byte, 3072)
+		buf := make([]byte, 2048)
 		read, err := dst.Read(buf)
-		//buf, read, err := decryptRead(dst)
-		//decrypt, err := AesDecrypt(buf[:read], key)
 		if err != nil {
 			log.Println(err)
 			return err
 		}
-
-		//bytes, _, _ := decryptRead(dst)
-		//lenBuf := bytes[:2]
-		//
-		////n, err := dst.Read(lenBuf)
-		////if err != nil {
-		////	log.Println(err)
-		////	return err
-		////}
-		////if n != 2 {
-		////	log.Println("length get wrong")
-		////	return nil
-		////}
-		//for i := 0; i < 2; i++ {
-		//	fmt.Printf("%d %d\n", lenBuf[0], lenBuf[1])
-		//}
-		//length := binary.BigEndian.Uint16(lenBuf)
-		//buf2 := buf[:length]
+		//buf, read, err := decryptRead(dst)
+		//decrypt, err := AesDecrypt(buf[:read], key)
 
 		fmt.Println("2: 解密前/读取: ", read)
 		if read > 0 {
 			//write, err := src.Write(buf2)
-			write, err := src.Write(buf[:read]) ///////////////
+			write, err := src.Write(buf[:read])
 			//write, err := src.Write(decrypt)
+
 			fmt.Println("2: 解密后//发送: ", write)
 			if err != nil {
 				log.Println(err)
@@ -183,6 +175,8 @@ func Init() error {
 		split := strings.Split(text, "=")
 		if split[0] == "key" {
 			key = []byte(split[1])
+		} else if split[0] == "iv" {
+			iv = []byte(split[1])
 		}
 	}
 	return nil

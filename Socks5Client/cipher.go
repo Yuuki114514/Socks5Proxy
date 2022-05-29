@@ -8,10 +8,6 @@ import (
 	"net"
 )
 
-var (
-	key []byte
-)
-
 // Padding 对明文进行填充
 func Padding(plainText []byte, blockSize int) []byte {
 	//计算要填充的长度
@@ -70,8 +66,9 @@ func AESDecrypt(cipherText []byte) []byte {
 	return plainText
 }
 
-func encryptWrite(conn net.Conn, buf []byte) (int, error) {
+func encryptWrite2(conn net.Conn, buf []byte) (int, error) {
 	encrypt := AESEncrypt(buf)
+	//fmt.Println("after encrypt: ", len(encrypt))
 	n, err := conn.Write(encrypt)
 	if err != nil {
 		log.Println(err)
@@ -80,13 +77,14 @@ func encryptWrite(conn net.Conn, buf []byte) (int, error) {
 	return n, nil
 }
 
-func decryptRead(conn net.Conn) ([]byte, int, error) {
+func decryptRead2(conn net.Conn) ([]byte, int, error) {
 	buf := make([]byte, 2048)
 	n, err := conn.Read(buf)
 	if err != nil {
 		log.Println(err)
 		return nil, 0, err
 	}
+	//fmt.Println("decryptRead: ", n)
 	decrypt := AESDecrypt(buf)
 	return decrypt, n, nil
 }

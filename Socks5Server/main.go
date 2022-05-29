@@ -12,12 +12,13 @@ func main() {
 	}
 
 	listen, err := net.Listen("tcp", "127.0.0.1:8888")
-	defer listen.Close()
+
 	if err != nil {
 		fmt.Println(err)
 		listen.Close()
 		return
 	}
+	defer listen.Close()
 
 	for {
 		conn, err := listen.Accept()
